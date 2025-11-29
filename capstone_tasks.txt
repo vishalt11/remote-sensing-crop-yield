@@ -1,0 +1,26 @@
+	---------------------------------------------------------------------------------------------
+Prompt for paper summarization
+
+'I want you to act as a research paper summarizer. I will provide you with a research paper on a specific topic, and you will create a summary of the main points and findings of the paper. Your summary should be concise and should accurately and objectively communicate the key points of the paper. You should not include any personal opinions or interpretations in your summary, but rather focus on objectively presenting the information from the paper. Your summary should be written in your own words and should not include any direct quotes from the paper. Please ensure that your summary is clear, concise, and accurately reflects the content of the original paper.'
+---------------------------------------------------------------------------------------------
+Important Questions:
+
+1. Is our RMSE, rRMSE (%) good enough to make a judgement? Does it get lost in the yty harvest differences?
+2. Since SIF is coarse (spatial resolution is 1 pixel = several sq km), bigger-continuous fields  will correspond better to a single SIF value than several smaller fields fragmented and other crop/vegetation intermixing and muddying the SIF value. (ie; you can see ecosystem level photosynthetic activity, but field-by-field 	variation is lost.)
+3. 
+
+---------------------------------------------------------------------------------------------
+17.10.2025 - 30.10.2025
+
+22.10.2025
+
+reviewed papers, accessed & understood data
+
+26.10.2025
+
+read the US and Australia paper, understand methodology
+
+build simple regression model using past 6 years of data (2014-2022)
+	- get Y harvest data
+	- get nc4 files for 6 years for summer barley
+	- 
