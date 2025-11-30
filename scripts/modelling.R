@@ -5,8 +5,7 @@ library(mice)
 
 #-------------------------------------------------------------------------------
 
-c4_codes <- c("maize")
-`%!in%` <- Negate(`%in%`)
+
 
 rds_files <- list.files("../data/crop_composition", pattern = "\\.rds$", full.names = TRUE)
 df_list <- lapply(rds_files, readRDS)
@@ -17,13 +16,13 @@ rm(df_list)
 
 
 saveRDS(result_all, file = '../data/model_data.rds')
+
+#-------------------------------------------------------------------------------
+
+
 result_all <- readRDS(file = '../data/model_data.rds')
 
-
-
-
 unique(lubridate::month(result_all[lubridate::year(result_all$Delta_Time) %in% c(2024),]$Delta_Time))
-
 
 idx <- sapply(result_all$crop_stats, function(df) {
   if (is.null(df) || nrow(df) == 0) return(FALSE)
@@ -31,7 +30,10 @@ idx <- sapply(result_all$crop_stats, function(df) {
 })
 
 # get the polygons with x pct wheat
-winterwheat_sf <- result_all[idx, ]
+winterwheat_sf <- result_all[idx,]
+
+c4_codes <- c("maize")
+`%!in%` <- Negate(`%in%`)
 
 winterwheat_sf <- winterwheat_sf %>%
   mutate(
@@ -51,22 +53,26 @@ winterwheat_sf <- winterwheat_sf %>%
       c3_pct / total_pct
     })
   )
+#---------------------------Eda Plots-------------------------------------------
 
+winterwheat_sf %>% 
+  st_drop_geometry() %>% 
+  select(Daily_SIF_740nm, wheat_share,c3_share,Meteo.vapor_pressure_deficit) %>% 
+  pivot_longer(cols = everything(),names_to = "variable",values_to = "value") %>% 
+  ggplot(aes(x = value)) +
+  geom_density(na.rm = TRUE) +
+  facet_wrap(~ variable, scales = "free") +
+  theme_bw()
 
-
-#head(winterwheat_sf$crop_stats,10)
 # wheat share
 nrow(winterwheat_sf[winterwheat_sf$wheat_share >= 0.5,])
 # negative SIF values
 # nadir=1
 # qualityflag
-
 winterwheat_sf <- winterwheat_sf[winterwheat_sf$Quality_Flag %in% c(0, 1),]
 
 wheat_l <- winterwheat_sf[winterwheat_sf$wheat_share < 0.2,]
 wheat_u <- winterwheat_sf[winterwheat_sf$wheat_share >= 0.8,]
-
-
 
 wheat_l <- st_drop_geometry(wheat_l)
 wheat_u <- st_drop_geometry(wheat_u)
@@ -90,7 +96,6 @@ ggplot() +
   facet_wrap(~ year(month), scales = "free_x") + 
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
 
-# check if these two time series are the same
 
 #---------------------------MODELLING-------------------------------------------
 sif_monthly <- as.data.frame(winterwheat_sf) |>
@@ -98,7 +103,7 @@ sif_monthly <- as.data.frame(winterwheat_sf) |>
     year = year(Delta_date),
     month = month(Delta_date, label = TRUE, abbr = TRUE)
   ) |>
-  filter(year %in% 2017:2024, month(Delta_date) %in% 2:5) |>
+  filter(year %in% 2017:2024, month(Delta_date) %in% 3:7) |>
   group_by(NUTS_NAME, year, month) |>
   summarise(
     mean_sif         = mean(Daily_SIF_740nm, na.rm = TRUE),
@@ -107,7 +112,7 @@ sif_monthly <- as.data.frame(winterwheat_sf) |>
     mean_temp_skin   = mean(Meteo.temperature_skin, na.rm = TRUE),
     mean_temp_2m     = mean(Meteo.temperature_two_meter, na.rm = TRUE),
     mean_vpd         = mean(Meteo.vapor_pressure_deficit, na.rm = TRUE),
-    #mean_c3_share    = mean(c3_share, na.rm = TRUE),
+    mean_c3_share    = mean(c3_share, na.rm = TRUE),
     .groups = "drop"
   )
 
@@ -126,17 +131,18 @@ X_all <- sif_monthly %>%
     names_from = month,
     values_from = c(
       mean_sif, mean_humidity, mean_pressure,
-      mean_temp_skin, mean_temp_2m, mean_vpd
+      mean_temp_skin, mean_temp_2m, mean_vpd, mean_c3_share
     ),
     names_glue = "{.value}_{month}"
   )
 
-X_all
+sort(colSums(is.na(X_all)))
+
+
 
 # List all CSV files in the folder
 files <- list.files("../data/bayern_yield_formatted/", pattern = "\\.csv$", full.names = TRUE)
-target_nuts <- c("Mittelfranken", "Niederbayern", "Oberbayern", 
-                 "Oberfranken", "Oberpfalz", "Schwaben", "Unterfranken")
+target_nuts <- c("Mittelfranken", "Niederbayern", "Oberbayern", "Oberfranken", "Oberpfalz", "Schwaben", "Unterfranken")
 
 # clean column names
 clean_names1 <- function(x) {
@@ -164,13 +170,9 @@ Y_all <- lapply(files, function(f) {
   bind_rows()
 
 # (German decimals use commas)
-Y_all <- Y_all |>
-  mutate(Winterweizen = as.numeric(gsub(",", ".", Winterweizen)))
+Y_all <- Y_all |> mutate(Winterweizen = as.numeric(gsub(",", ".", Winterweizen)))
 
-Y_all
-
-XY_all <- X_all |>
-  inner_join(Y_all, by = c("NUTS_NAME" = "name", "year" = "year"))
+XY_all <- X_all |> inner_join(Y_all, by = c("NUTS_NAME" = "name", "year" = "year"))
 
 XY_all$Winterweizen <- XY_all$Winterweizen/10
 
@@ -178,24 +180,35 @@ XY_all$Winterweizen <- XY_all$Winterweizen/10
 train_df <- XY_all |> filter(year <= 2023)
 test_df  <- XY_all |> filter(year == 2024)
 
-#-------------IMPUTATION--------------------------------------------------------
+train_df <- train_df %>%
+  mutate(
+    NUTS_NAME = factor(NUTS_NAME),
+    year      = factor(year)
+  )
 
 
-imp <- mice(XY_all, m = 5, method = "pmm")
-XY_all <- complete(imp)
-#-------------------------------------------------------------------------------
 
+#------------------------------IMPUTATION---------------------------------------
+md.pattern(train_df, rotate.names = TRUE)
 
-# linear regression
-model <- lm(Winterweizen ~ ., data = train_df[, -c(1,2)])
+imp <- mice(train_df,m=5,maxit=50,meth='pmm',seed=123)
+summary(imp)
+
+imp$meth
+
+train_complete <- complete(imp,1)
+#----------------------------------linear regression----------------------------
+fmla <- Winterweizen ~ mean_sif_Mar + mean_sif_Apr + mean_sif_May + mean_sif_Jun +
+  mean_sif_Jul + mean_c3_share_Mar + mean_c3_share_Apr + mean_c3_share_May + mean_c3_share_Jun +
+  mean_c3_share_Jul + mean_temp_2m_Mar + mean_temp_2m_Apr + mean_temp_2m_May + mean_temp_2m_Jun +
+  mean_temp_2m_Jul
+model <- lm(fmla, data = train_complete[, -c(1,2)])
 
 # model summary
 summary(model)
 
 #test_df <- test_df %>% drop_na(SIF_Feb, SIF_Mar, SIF_Apr, SIF_May)
 test_df$predicted_yield <- predict(model, newdata = test_df)
-test_df |> select(NUTS_NAME, year, Winterweizen, predicted_yield)
-
 
 test_df <- test_df |>
   mutate(
@@ -203,7 +216,71 @@ test_df <- test_df |>
     pct_diff = 100 * (predicted_yield - Winterweizen) / Winterweizen
   )
 
-rmse <- sqrt(mean((test_df[test_df$NUTS_NAME != 'Oberfranken',]$predicted_yield - test_df[test_df$NUTS_NAME != 'Oberfranken',]$Winterweizen)^2, na.rm = TRUE))
-rmse
+test_df |> select(NUTS_NAME, year, Winterweizen, predicted_yield, pct_diff)
+
+# rmse <- sqrt(mean((test_df[test_df$NUTS_NAME != 'Oberfranken',]$predicted_yield - test_df[test_df$NUTS_NAME != 'Oberfranken',]$Winterweizen)^2, na.rm = TRUE))
+# rmse
 rmse <- sqrt(mean((test_df$predicted_yield - test_df$Winterweizen)^2, na.rm = TRUE))
 rmse
+
+#----------------------------------glmnet----------------------------
+library(glmnet)
+
+
+glm_train <- train_complete %>% select(-c(NUTS_NAME, year))
+
+X <- model.matrix(Winterweizen ~ ., data = glm_train)[, -1]  # drop intercept column
+y <- train_complete$Winterweizen
+
+set.seed(123)
+cv_fit <- cv.glmnet(
+  x      = X,
+  y      = y,
+  alpha  = 1,      # 1 = lasso, 0 = ridge, in between = elastic net
+  nfolds = 5       # you can use 10, but with ~50 obs 5 is fine
+)
+
+## 5. Inspect results
+plot(cv_fit)                           # CV curve vs log(lambda)
+cv_fit$lambda.min                      # lambda with minimum CV error
+cv_fit$lambda.1se                      # more regularized lambda
+
+## 6. Coefficients at best lambda
+coef_min  <- coef(cv_fit, s = "lambda.min")
+coef_1se  <- coef(cv_fit, s = "lambda.1se")
+
+coef_min
+coef_1se
+
+glm_test <- test_df %>% select(-c(NUTS_NAME, year))
+
+X_test <- model.matrix(Winterweizen ~ ., data = glm_test)[, -1]
+y_pred <- predict(cv_fit, newx = X_test, s = "lambda.min")
+
+test_df <- test_df %>% mutate(
+      pred_Winterweizen = as.numeric(y_pred),
+      pct_diff = 100 * (pred_Winterweizen - Winterweizen) / Winterweizen) %>% 
+      select(NUTS_NAME, pred_Winterweizen, Winterweizen, pct_diff)
+
+rmse <- sqrt(mean((test_df[test_df$NUTS_NAME != 'Oberfranken',]$pred_Winterweizen - test_df[test_df$NUTS_NAME != 'Oberfranken',]$Winterweizen)^2, na.rm = TRUE))
+rmse
+
+#----------------------------------xgboost----------------------------
+
+train_df <- XY_all |> filter(year <= 2023)
+test_df  <- XY_all |> filter(year == 2024)
+
+train_df_mean_imp <- train_df %>%
+  mutate(
+    across(
+      where(is.numeric),
+      ~ ifelse(is.na(.), mean(., na.rm = TRUE), .)
+    )
+  )
+
+
+
+
+
+
+
