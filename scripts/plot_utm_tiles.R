@@ -136,9 +136,9 @@ target_crs <- st_crs(tiles_sf)
 nuts1_de <- giscoR::gisco_get_nuts(year = "2021", epsg = 4326, nuts_level = 1, 
                                    resolution = "01", country = "DE")
 
-nuts2_de <- giscoR::gisco_get_nuts(year = "2021", epsg = 4326, nuts_level = 2, 
+nuts2_de <- giscoR::gisco_get_nuts(year = "2021", epsg = 4326, nuts_level = 3, 
                                    resolution = "01", country = "DE")
-
+nuts2_centroids <- sf::st_centroid(nuts2_de)
 # nuts1_de <- st_transform(nuts1_de, target_crs)
 # nuts2_de <- st_transform(nuts2_de, target_crs)
 
@@ -149,6 +149,20 @@ ggplot() +
   geom_sf(data = tiles_sf, aes(color = tile_id, fill = tile_id), linewidth = 0.8, alpha = 0.3 ) +
   coord_sf(xlim = c(8, 15), ylim = c(46.5, 51), expand = FALSE) +
   theme_minimal() +
-  labs(title = "14 tiles covering bavaria", x = "Lon", y = "Lat")
+  labs(title = "14 tiles covering bavaria", x = "Lon", y = "Lat") +
+  # --- labels for NUTS level 3 ---
+  geom_sf_text(
+    data = nuts2_centroids,
+    aes(label = NUTS_ID),   # or NUTS_NAME, depending on the column you want
+    size = 2.5,
+    check_overlap = TRUE
+  ) +
+  coord_sf(xlim = c(8, 15), ylim = c(46.5, 51), expand = FALSE) +
+  theme_minimal() +
+  labs(
+    title = "14 tiles covering Bavaria",
+    x = "Lon",
+    y = "Lat"
+  )
 
 
