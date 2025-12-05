@@ -26,7 +26,7 @@ unique(lubridate::month(result_all[lubridate::year(result_all$Delta_Time) %in% c
 
 idx <- sapply(result_all$crop_stats, function(df) {
   if (is.null(df) || nrow(df) == 0) return(FALSE)
-  any(df$code == "winter_wheat" & df$area_pct >= 10, na.rm = TRUE)
+  any(df$code == "winter_wheat" & df$area_pct >= 0, na.rm = TRUE)
 })
 
 # get the polygons with x pct wheat
@@ -35,7 +35,7 @@ winterwheat_sf <- result_all[idx,]
 c4_codes <- c("maize")
 `%!in%` <- Negate(`%in%`)
 
-winterwheat_sf <- winterwheat_sf %>%
+winterwheat_sf <- winterwheat_sf |>
   mutate(
     wheat_share = purrr::map_dbl(crop_stats, function(cs) {
       wheat_row <- cs[cs$code == "winter_wheat", ]
@@ -55,10 +55,10 @@ winterwheat_sf <- winterwheat_sf %>%
   )
 #---------------------------Eda Plots-------------------------------------------
 
-winterwheat_sf %>% 
-  st_drop_geometry() %>% 
-  select(Daily_SIF_740nm, wheat_share,c3_share,Meteo.vapor_pressure_deficit) %>% 
-  pivot_longer(cols = everything(),names_to = "variable",values_to = "value") %>% 
+winterwheat_sf |> 
+  st_drop_geometry() |> 
+  select(Daily_SIF_740nm, wheat_share,c3_share,Meteo.vapor_pressure_deficit) |> 
+  pivot_longer(cols = everything(),names_to = "variable",values_to = "value") |> 
   ggplot(aes(x = value)) +
   geom_density(na.rm = TRUE) +
   facet_wrap(~ variable, scales = "free") +
@@ -77,14 +77,14 @@ wheat_u <- winterwheat_sf[winterwheat_sf$wheat_share >= 0.8,]
 wheat_l <- st_drop_geometry(wheat_l)
 wheat_u <- st_drop_geometry(wheat_u)
 
-wheat_l <- wheat_l %>%
-  mutate(date = as.Date(Delta_date), month = floor_date(date, "month")) %>%
-  group_by(month) %>%
+wheat_l <- wheat_l |>
+  mutate(date = as.Date(Delta_date), month = floor_date(date, "month")) |>
+  group_by(month) |>
   summarise(mean_sif = mean(Daily_SIF_740nm, na.rm = TRUE), .groups = "drop")
 
-wheat_u <- wheat_u %>%
-  mutate(date = as.Date(Delta_date), month = floor_date(date, "month")) %>%
-  group_by(month) %>%
+wheat_u <- wheat_u |>
+  mutate(date = as.Date(Delta_date), month = floor_date(date, "month")) |>
+  group_by(month) |>
   summarise(mean_sif = mean(Daily_SIF_740nm, na.rm = TRUE), .groups = "drop")
 
 
@@ -95,6 +95,47 @@ ggplot() +
   theme_bw() +
   facet_wrap(~ year(month), scales = "free_x") + 
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+
+#---------------------------plot coverage---------------------------------------
+
+winterwheat_sf %>%
+  ggplot(aes(x=wheat_share)) +
+  geom_density(fill="#69b3a2", color="#e9ecef", alpha=0.8) +
+  theme_bw()
+
+head(winterwheat_sf |> select(-c(crop_stats)),1)
+
+winterwheat_sf <- winterwheat_sf |>
+  mutate(
+    center_lat = (Lat_corner1 + Lat_corner2 + Lat_corner3 + Lat_corner4) / 4,
+    center_lon = (Lon_corner1 + Lon_corner2 + Lon_corner3 + Lon_corner4) / 4
+  )
+
+winterwheat_sf$month <- lubridate::month(winterwheat_sf$Delta_Time)
+winterwheat_sf$year <- lubridate::year(winterwheat_sf$Delta_Time)
+
+high_ww <- winterwheat_sf[winterwheat_sf$wheat_share > 0.25,]
+
+nuts1_de <- giscoR::gisco_get_nuts(year = "2021", epsg = 4326, nuts_level = 1, resolution = "01", country = "DE")
+nuts2_de <- giscoR::gisco_get_nuts(year = "2021", epsg = 4326, nuts_level = 3, resolution = "01", country = "DE")
+nuts2_centroids <- sf::st_centroid(nuts2_de)
+
+nuts3_bavaria <- nuts2_de |> filter(startsWith(NUTS_ID, "DE2"))
+
+
+ggplot() +
+  geom_sf(data = nuts1_de, fill = NA, color = "blue", linewidth = 1) +
+  geom_sf(data = nuts3_bavaria, fill = NA, color = "black", linewidth = 0.4) +
+  geom_point(data = high_ww |> filter(year != 2024), 
+             aes(x = center_lon, y = center_lat, color = factor(month)),size = 1, alpha=0.8) +
+  theme_bw() +
+  scale_color_brewer(name = "Month",palette = "Set2") +
+  coord_sf(xlim = c(8.8, 14), ylim = c(47, 50.7), expand = FALSE) +
+  labs(x = "Longitude", y = "Latitude") +
+  guides(color = guide_legend(override.aes = list(size = 4))) +
+  theme(legend.title = element_text(size = 12), 
+        legend.text = element_text(size = 10),
+        axis.ticks = element_blank())
 
 
 #---------------------------MODELLING-------------------------------------------
@@ -125,8 +166,8 @@ sif_monthly <- as.data.frame(winterwheat_sf) |>
 #   ) |>
 #   arrange(NUTS_NAME, year)
 
-X_all <- sif_monthly %>%
-  mutate(month = as.character(month)) %>%
+X_all <- sif_monthly |>
+  mutate(month = as.character(month)) |>
   pivot_wider(
     names_from = month,
     values_from = c(
@@ -180,7 +221,7 @@ XY_all$Winterweizen <- XY_all$Winterweizen/10
 train_df <- XY_all |> filter(year <= 2023)
 test_df  <- XY_all |> filter(year == 2024)
 
-train_df <- train_df %>%
+train_df <- train_df |>
   mutate(
     NUTS_NAME = factor(NUTS_NAME),
     year      = factor(year)
@@ -207,7 +248,7 @@ model <- lm(fmla, data = train_complete[, -c(1,2)])
 # model summary
 summary(model)
 
-#test_df <- test_df %>% drop_na(SIF_Feb, SIF_Mar, SIF_Apr, SIF_May)
+#test_df <- test_df |> drop_na(SIF_Feb, SIF_Mar, SIF_Apr, SIF_May)
 test_df$predicted_yield <- predict(model, newdata = test_df)
 
 test_df <- test_df |>
@@ -227,7 +268,7 @@ rmse
 library(glmnet)
 
 
-glm_train <- train_complete %>% select(-c(NUTS_NAME, year))
+glm_train <- train_complete |> select(-c(NUTS_NAME, year))
 
 X <- model.matrix(Winterweizen ~ ., data = glm_train)[, -1]  # drop intercept column
 y <- train_complete$Winterweizen
@@ -252,14 +293,14 @@ coef_1se  <- coef(cv_fit, s = "lambda.1se")
 coef_min
 coef_1se
 
-glm_test <- test_df %>% select(-c(NUTS_NAME, year))
+glm_test <- test_df |> select(-c(NUTS_NAME, year))
 
 X_test <- model.matrix(Winterweizen ~ ., data = glm_test)[, -1]
 y_pred <- predict(cv_fit, newx = X_test, s = "lambda.min")
 
-test_df <- test_df %>% mutate(
+test_df <- test_df |> mutate(
       pred_Winterweizen = as.numeric(y_pred),
-      pct_diff = 100 * (pred_Winterweizen - Winterweizen) / Winterweizen) %>% 
+      pct_diff = 100 * (pred_Winterweizen - Winterweizen) / Winterweizen) |> 
       select(NUTS_NAME, pred_Winterweizen, Winterweizen, pct_diff)
 
 rmse <- sqrt(mean((test_df[test_df$NUTS_NAME != 'Oberfranken',]$pred_Winterweizen - test_df[test_df$NUTS_NAME != 'Oberfranken',]$Winterweizen)^2, na.rm = TRUE))
@@ -270,7 +311,7 @@ rmse
 train_df <- XY_all |> filter(year <= 2023)
 test_df  <- XY_all |> filter(year == 2024)
 
-train_df_mean_imp <- train_df %>%
+train_df_mean_imp <- train_df |>
   mutate(
     across(
       where(is.numeric),
