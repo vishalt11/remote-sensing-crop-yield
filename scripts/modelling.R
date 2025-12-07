@@ -22,7 +22,7 @@ saveRDS(result_all, file = '../data/model_data.rds')
 
 result_all <- readRDS(file = '../data/model_data.rds')
 
-unique(lubridate::month(result_all[lubridate::year(result_all$Delta_Time) %in% c(2024),]$Delta_Time))
+#unique(lubridate::month(result_all[lubridate::year(result_all$Delta_Time) %in% c(2024),]$Delta_Time))
 
 idx <- sapply(result_all$crop_stats, function(df) {
   if (is.null(df) || nrow(df) == 0) return(FALSE)
@@ -96,7 +96,7 @@ ggplot() +
   facet_wrap(~ year(month), scales = "free_x") + 
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
 
-#---------------------------plot coverage---------------------------------------
+#---------------------------date coverage---------------------------------------
 
 winterwheat_sf %>%
   ggplot(aes(x=wheat_share)) +
@@ -126,7 +126,7 @@ nuts3_bavaria <- nuts2_de |> filter(startsWith(NUTS_ID, "DE2"))
 ggplot() +
   geom_sf(data = nuts1_de, fill = NA, color = "blue", linewidth = 1) +
   geom_sf(data = nuts3_bavaria, fill = NA, color = "black", linewidth = 0.4) +
-  geom_point(data = high_ww |> filter(year != 2024), 
+  geom_point(data = winterwheat_sf |> filter(NUTS_NAME == "Oberbayern"), 
              aes(x = center_lon, y = center_lat, color = factor(month)),size = 1, alpha=0.8) +
   theme_bw() +
   scale_color_brewer(name = "Month",palette = "Set2") +
@@ -136,6 +136,146 @@ ggplot() +
   theme(legend.title = element_text(size = 12), 
         legend.text = element_text(size = 10),
         axis.ticks = element_blank())
+
+#---------which nuts 3 have all the months + years data-------------------------
+
+nuts3_bavaria <- nuts3_bavaria |> select(NUTS3_ID = NUTS_ID, NUTS3_NAME = NUTS_NAME)
+
+# Create point sf from center_lon, center_lat
+winter_centers <- winterwheat_sf |>
+  st_drop_geometry() |>
+  mutate(id = row_number()) |>
+  st_as_sf(
+    coords = c("center_lon", "center_lat"),
+    crs    = 4326
+  )
+
+# which NUTS3 polygon contains the center point?
+winter_centers_nuts3 <- st_join(
+  winter_centers,
+  nuts3_bavaria,
+  join = st_within,   
+  left = TRUE
+)
+
+# Drop point geometry and keep the NUTS3 labels
+nuts3_labels <- winter_centers_nuts3 |>
+  st_drop_geometry() |>
+  select(id, NUTS3_ID, NUTS3_NAME)
+
+# Join back to original polygon sf
+winterwheat_sf <- winterwheat_sf |>
+  mutate(id = row_number()) |>
+  left_join(nuts3_labels, by = "id") |>
+  select(-id)
+
+
+# nuts3 for each year, which months does it have data for?
+
+# Start from attribute table only
+ww_attr <- winterwheat_sf |>
+  st_drop_geometry()
+
+# Unique combinations of NUTS3, year, month
+nuts3_year_month <- ww_attr |>
+  distinct(NUTS3_ID, NUTS3_NAME, year, month) |>
+  arrange(NUTS3_ID, year, month)
+
+# For each NUTS3 & year: which months have data, which are missing (2–7)
+nuts3_coverage <- nuts3_year_month |>
+  group_by(NUTS3_ID, NUTS3_NAME, year) |>
+  summarise(
+    months_with_data   = list(sort(unique(month))),
+    months_missing     = list(setdiff(2:7, unique(month))),
+    n_months_with_data = dplyr::n(),
+    .groups = "drop"
+  )
+
+# one column per month
+nuts3_coverage_wide <- nuts3_year_month |>
+  mutate(has_data = TRUE) |>
+  tidyr::pivot_wider(
+    id_cols = c(NUTS3_ID, NUTS3_NAME, year),
+    names_from = month,
+    names_prefix = "m",
+    values_from = has_data,
+    values_fill = FALSE
+  )
+
+coverage_nuts3_heatmap <- ww_attr |>
+  # keep only the relevant period & months
+  filter(
+    dplyr::between(year, 2017, 2023),
+    month %in% 2:7
+  ) |>
+  # unique NUTS3–year–month combos
+  distinct(NUTS3_ID, NUTS3_NAME, year, month) |>
+  # count number of month-year combos with data per NUTS3
+  count(NUTS3_ID, NUTS3_NAME, name = "n_months_with_data") |>
+  mutate(
+    total_possible = 8 * 6,                             # 2017–2024, months 2–7
+    coverage_pct   = 100 * n_months_with_data / total_possible
+  )
+
+nuts3_map <- nuts3_bavaria |>
+  left_join(coverage_nuts3_heatmap, by = c("NUTS3_ID" = "NUTS3_ID")) |>
+  # NUTS3 with no data at all → 0% coverage
+  mutate(
+    coverage_pct = replace_na(coverage_pct, 0)
+  )
+
+ggplot(nuts3_map) +  
+  geom_sf(aes(fill = coverage_pct), color = NA) +
+  scale_fill_viridis_c(
+    name   = "SIF coverage\n(%)",
+    limits = c(0, 100)
+  ) +
+  coord_sf() +
+  theme_minimal() +
+  labs(
+    title    = "OCO-2 SIF Coverage: NUTS3 Regions (2017–2024, Feb–Jul)",
+    subtitle = "Color shows % of month–year combinations with at least one sounding"
+  )
+
+# plot the labelling arrow
+
+max_region <- nuts3_map |>
+  filter(coverage_pct == max(coverage_pct)) |>
+  slice(1)
+# Get centroid for labeling placement
+centroid <- st_coordinates(st_centroid(max_region)) |> as.data.frame()
+label_x <- centroid$X
+label_y <- centroid$Y
+
+ggplot(nuts3_map) +
+  geom_sf(aes(fill = coverage_pct), color = NA) +
+  scale_fill_viridis_c(
+    name   = "SIF coverage\n(%)",
+    limits = c(0, 100)
+  ) +
+  # Arrow pointing to region centroid
+  geom_segment(
+    aes(
+      x = label_x + 1,  
+      y = label_y + 0.1,
+      xend = label_x - 0.1,
+      yend = label_y - 0.1),
+    arrow = arrow(length = unit(0.25, "cm")),
+    linewidth = 0.8
+  ) +
+  # Label with ID and % coverage
+  geom_label(
+    aes(x = label_x + 1, y = label_y + 0.1, 
+        label = paste0(max_region$NUTS3_ID, "\n", round(max_region$coverage_pct), "%")),
+    fill = "white", label.size = 0.3, size = 3) +
+  coord_sf() +
+  theme_minimal() +
+  labs(
+    x = 'Lon', y = 'Lat',
+    title = "OCO-2 SIF Coverage: NUTS3 Regions (2017–2024, Feb–Jul)",
+    subtitle = "Color shows % of month–year combinations with at least one sounding"
+  )
+
 
 
 #---------------------------MODELLING-------------------------------------------
