@@ -1,0 +1,96 @@
+Aichach-Friedberg, Landkreis
+Altötting, Landkreis
+Amberg-Sulzbach, Landkreis
+Amberg, Kreisfreie Stadt
+Ansbach, Kreisfreie Stadt
+Ansbach, Landkreis
+Aschaffenburg, Kreisfreie Stadt
+Aschaffenburg, Landkreis
+Augsburg, Kreisfreie Stadt
+Augsburg, Landkreis
+Bad Kissingen, Landkreis
+Bad Tölz-Wolfratshausen, Landkreis
+Bamberg, Kreisfreie Stadt
+Bamberg, Landkreis
+Bayreuth, Kreisfreie Stadt
+Bayreuth, Landkreis
+Berchtesgadener Land, Landkreis
+Cham, Landkreis
+Coburg, Kreisfreie Stadt
+Coburg, Landkreis
+Dachau, Landkreis
+Deggendorf, Landkreis
+Dillingen a.d.Donau, Landkreis
+Dingolfing-Landau, Landkreis
+Donau-Ries, Landkreis
+Ebersberg, Landkreis
+Eichstätt, Landkreis
+Erding, Landkreis
+Erlangen-Höchstadt, Landkreis
+Erlangen, Kreisfreie Stadt
+Forchheim, Landkreis
+Freising, Landkreis
+Freyung-Grafenau, Landkreis
+Fürstenfeldbruck, Landkreis
+Fürth, Kreisfreie Stadt
+Fürth, Landkreis
+Garmisch-Partenkirchen, Landkreis
+Günzburg, Landkreis
+Haßberge, Landkreis
+Hof, Kreisfreie Stadt
+Hof, Landkreis
+Ingolstadt, Kreisfreie Stadt
+Kaufbeuren, Kreisfreie Stadt
+Kelheim, Landkreis
+Kempten (Allgäu), Kreisfreie Stadt
+Kitzingen, Landkreis
+Kronach, Landkreis
+Kulmbach, Landkreis
+Landsberg am Lech, Landkreis
+Landshut, Kreisfreie Stadt
+Landshut, Landkreis
+Lichtenfels, Landkreis
+Lindau (Bodensee), Landkreis
+Main-Spessart, Landkreis
+Memmingen, Kreisfreie Stadt
+Miesbach, Landkreis
+Miltenberg, Landkreis
+Mühldorf a.Inn, Landkreis
+München, Landeshauptstadt
+München, Landkreis
+Neu-Ulm, Landkreis
+Neuburg-Schrobenhausen, Landkreis
+Neumarkt i.d.OPf., Landkreis
+Neustadt a.d.Aisch-Bad Windsheim, Landkreis
+Neustadt a.d.Waldnaab, Landkreis
+Nürnberg, Kreisfreie Stadt
+Nürnberger Land, Landkreis
+Oberallgäu, Landkreis
+Ostallgäu, Landkreis
+Passau, Kreisfreie Stadt
+Passau, Landkreis
+Pfaffenhofen a.d.Ilm, Landkreis
+Regen, Landkreis
+Regensburg, Kreisfreie Stadt
+Regensburg, Landkreis
+Rhön-Grabfeld, Landkreis
+Rosenheim, Kreisfreie Stadt
+Rosenheim, Landkreis
+Roth, Landkreis
+Rottal-Inn, Landkreis
+Schwabach, Kreisfreie Stadt
+Schwandorf, Landkreis
+Schweinfurt, Kreisfreie Stadt
+Schweinfurt, Landkreis
+Starnberg, Landkreis
+Straubing-Bogen, Landkreis
+Straubing, Kreisfreie Stadt
+Tirschenreuth, Landkreis
+Traunstein, Landkreis
+Unterallgäu, Landkreis
+Weiden i.d.OPf., Kreisfreie Stadt
+Weilheim-Schongau, Landkreis
+Weißenburg-Gunzenhausen, Landkreis
+Wunsiedel i.Fichtelgebirge, Landkreis
+Würzburg, Kreisfreie Stadt
+Würzburg, Landkreis
