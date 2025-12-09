@@ -564,10 +564,6 @@ polys_with_crop <- polys_with_crop %>%
   )
 
 
-#-------------------------------------------------------------------------------
-# Task 5: for bavaria, total area, how much area is winter wheat?
-
-
 
 
 

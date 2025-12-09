@@ -93,3 +93,36 @@ colSums(is.na(XY_all))
 arrow::write_parquet(XY_all, "../data/model_data_sen2.parquet")
 XY_all <- arrow::read_parquet("../data/model_data_sen2.parquet")
 
+XY_all <- XY_all |> select(year, nuts3_id, NUTS_NAME, NDVI_march, NDVI_april, NDVI_may, NDVI_june,
+                           NIRv_march, NIRv_april, NIRv_may, NIRv_june, Winterweizen)
+
+train_df <- XY_all |> filter(year <= 2023)
+train_df <- train_df |> drop_na()
+test_df  <- XY_all |> filter(year == 2024)
+
+
+
+model <- lm(Winterweizen ~ ., data = train_df[, -c(1,2,3)])
+summary(model)
+
+test_df$predicted_yield <- predict(model, newdata = test_df)
+test_df <- test_df |>
+  mutate(
+    predicted_yield = predict(model, newdata = test_df),
+    pct_diff = round(100 * (predicted_yield - Winterweizen) / Winterweizen,2)
+  )
+
+
+test_df |> select(nuts3_id, NUTS_NAME, Winterweizen, predicted_yield, pct_diff) |> print(n=70)
+
+
+rmse <- sqrt(mean((test_df$predicted_yield - test_df$Winterweizen)^2, na.rm = TRUE))
+rmse
+
+
+
+XY_all |> filter(nuts3_id == 'DE249')
+
+sen2_indices |> filter(nuts3_id == 'DE249')
+
+
