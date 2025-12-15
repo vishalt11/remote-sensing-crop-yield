@@ -11,24 +11,27 @@ library(terra)
 library(rnaturalearth)
 
 #48.349362, 12.150977
-aoi_point <- sf::st_point(c(-74.912131, 44.080410))
+#aoi_point <- sf::st_point(c(-74.912131, 44.080410))
 
 aoi_point <- sf::st_point(c(12.150977, 48.349362))
 aoi_sfc <- sf::st_set_crs(sf::st_sfc(aoi_point), 4326)
 aoi_projected <- sf::st_transform(aoi_sfc, 5070)
-aoi_buffer_projected <- sf::st_buffer(aoi_projected, 1000)
+aoi_buffer_projected <- sf::st_buffer(aoi_projected, 100)
 
-aoi_wgs84 <- sf::st_transform(aoi_buffer_projected, 4326)
 
-# Get the centroid for map view
-centroid <- sf::st_coordinates(aoi_point)
-center_lon <- centroid[1, 1]
-center_lat <- centroid[1, 2]
 
-# bavaria
-aoi_point <- c(xmin = 8.9, ymin = 47.2, xmax = 13.9, ymax = 50.5)
-aoi_sfc <- sf::st_bbox(aoi_point, crs = 4326) |> sf::st_as_sfc()
-aoi_projected <- sf::st_transform(aoi_sfc, 5070)
+
+# aoi_wgs84 <- sf::st_transform(aoi_buffer_projected, 4326)
+# 
+# # Get the centroid for map view
+# centroid <- sf::st_coordinates(aoi_point)
+# center_lon <- centroid[1, 1]
+# center_lat <- centroid[1, 2]
+# 
+# # bavaria
+# aoi_point <- c(xmin = 8.9, ymin = 47.2, xmax = 13.9, ymax = 50.5)
+# aoi_sfc <- sf::st_bbox(aoi_point, crs = 4326) |> sf::st_as_sfc()
+# aoi_projected <- sf::st_transform(aoi_sfc, 5070)
 
 
 # world_map <- rnaturalearth::ne_countries(scale = "medium", returnclass = "sf")
@@ -49,8 +52,8 @@ aoi_projected <- sf::st_transform(aoi_sfc, 5070)
 output_file_name <- "sentinel2_ndvi_composite.tif"
 lcpri <- get_stac_data(
   aoi_buffer_projected,
-  start_date = "2021-01-01", 
-  end_date = "2021-01-10",
+  start_date = "2024-04-01", 
+  end_date = "2024-04-30",
   asset_names = c("B04", "B08", "SCL"), # BAND NAMES
   stac_source = "https://planetarycomputer.microsoft.com/api/stac/v1/",
   collection = "sentinel-2-l2a", # the name after collections https://planetarycomputer.microsoft.com/catalog
@@ -64,12 +67,12 @@ lcpri <- get_stac_data(
 
 lcpri
 
-terra::plot(terra::rast(lcpri[8]))
-terra::plot(terra::rast(lcpri))
-terra::res(terra::rast(lcpri))
+terra::plot(terra::rast(lcpri[[2]]))
+#terra::plot(terra::rast(lcpri))
+#terra::res(terra::rast(lcpri))
 
 # bands
-names(terra::rast(lcpri))
+#names(terra::rast(lcpri))
 
 # store raster
 sentinel_raster <- terra::rast(lcpri)
@@ -77,10 +80,10 @@ sentinel_raster <- terra::rast(lcpri)
 # calc NDVI
 # NDVI = (NIR - RED) / (NIR + RED)
 # B08 is the second band, B04 is the first band in the SpatRaster
-ndvi_raster <- (sentinel_raster[[2]] - sentinel_raster[[1]]) / 
-  (sentinel_raster[[2]] + sentinel_raster[[1]])
+nirv_raster <- ((sentinel_raster[[2]] - sentinel_raster[[1]]) / 
+  (sentinel_raster[[2]] + sentinel_raster[[1]]))*sentinel_raster[[2]]
 
-terra::plot(ndvi_raster)
+terra::plot(nirv_raster)
 
 # color palette for NDVI (check range from above plot)
 d1 <- c(-0.4, 0.8)

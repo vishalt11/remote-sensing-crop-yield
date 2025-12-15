@@ -6,6 +6,95 @@ library(leaflet.extras)
 library(sf)
 library(giscoR)
 
+library(tidyverse)
+library(tidymodels)
+library(mice)
+library(rsi)
+library(terra)
+
+month_specs <- tibble::tribble(
+  ~month_name, ~start_date,    ~end_date,
+  "march",     "2024-03-01",   "2024-03-31",
+  "april",     "2024-04-01",   "2024-04-30",
+  "may",       "2024-05-01",   "2024-05-31",
+  "june",      "2024-06-01",   "2024-06-30"
+)
+
+compute_mean_nirv_month <- function(aoi_sf_4326, start_date, end_date, out_tif) {
+  # 1) ensure AOI is valid + in EPSG:4326
+  aoi_sf_4326 <- sf::st_make_valid(aoi_sf_4326)
+  aoi_sf_4326 <- sf::st_transform(aoi_sf_4326, 4326)
+  
+  # 2) get composite tif (use existing file if already downloaded)
+  if (!file.exists(out_tif)) {
+    lcpri <- rsi::get_stac_data(
+      aoi_sf_4326,
+      start_date = start_date,
+      end_date   = end_date,
+      asset_names = c("B04", "B08", "SCL"),
+      stac_source = "https://planetarycomputer.microsoft.com/api/stac/v1/",
+      collection  = "sentinel-2-l2a",
+      output_filename = out_tif,
+      cloud_cover_threshold = 100,
+      mask_function = "s2_mask",
+      composite_function = "mean"
+    )
+    tif_path <- lcpri  # rsi returns the written file path
+  } else {
+    tif_path <- out_tif
+  }
+  
+  # 3) read raster + compute NIRV
+  sentinel_raster <- terra::rast(tif_path) / 10000
+  
+  nirv_raster <- ((sentinel_raster[[2]] - sentinel_raster[[1]]) /
+                    (sentinel_raster[[2]] + sentinel_raster[[1]])) * sentinel_raster[[2]]
+  
+  # 4) mask/crop to AOI + mean
+  aoi_v <- terra::vect(aoi_sf_4326)
+  nirv_in <- terra::mask(terra::crop(nirv_raster, aoi_v), aoi_v)
+  
+  terra::global(nirv_in, fun = "mean", na.rm = TRUE)[1, 1]
+}
+
+df_model <- arrow::read_parquet("../data/model_data_all.parquet") %>%
+  dplyr::select(
+    NUTS_NAME, year, Winterweizen,
+    dplyr::starts_with("mean_sif"),
+    dplyr::starts_with("mean_c3"),
+    dplyr::contains("NIRv", ignore.case = TRUE)
+  )
+
+train_df <- df_model %>% dplyr::filter(year < 2024)
+train_ids <- paste(train_df$NUTS_NAME, train_df$year, sep = "_")
+
+train_df <- train_df %>%
+  dplyr::select(-NUTS_NAME, -year) %>%
+  as.data.frame()
+rownames(train_df) <- train_ids
+
+# mice imputation on train only
+imp <- mice::mice(train_df, m = 5, maxit = 50, meth = "pmm", seed = 123, printFlag = FALSE)
+train_df_imp <- mice::complete(imp, 1)
+
+# recipe + model
+yield_recipe <- recipes::recipe(Winterweizen ~ ., data = train_df_imp) %>%
+  recipes::step_normalize(recipes::all_numeric_predictors())
+
+lm_model <- parsnip::linear_reg() %>% parsnip::set_engine("lm")
+
+lm_workflow <- workflows::workflow() %>%
+  workflows::add_recipe(yield_recipe) %>%
+  workflows::add_model(lm_model)
+
+lm_final_fit <- fit(lm_workflow, data = train_df_imp)
+
+# Save the predictor names the model expects (very important)
+model_predictors <- setdiff(names(train_df_imp), "Winterweizen")
+
+
+
+
 ui <- fluidPage(
   titlePanel("Get Yield for your Farm"),
   sidebarLayout(
@@ -16,6 +105,9 @@ ui <- fluidPage(
         choices = c("Winter wheat"),
         selected = "Winter wheat"
       ),
+      actionButton("run_pred", "Predict yield (t/ha)"),
+      h4("Predicted yield (t/ha):"),
+      verbatimTextOutput("pred_print"),
       h4("Current sf object:"),
       verbatimTextOutput("sf_print")
     ),
@@ -45,7 +137,7 @@ server <- function(input, output, session) {
   
   output$map <- renderLeaflet({
     leaflet() %>%
-      addProviderTiles("CartoDB.Positron") %>%
+      addProviderTiles("Esri.WorldImagery") %>%
       fitBounds(
         lng1 = bav_bbox[["xmin"]], lat1 = bav_bbox[["ymin"]],
         lng2 = bav_bbox[["xmax"]], lat2 = bav_bbox[["ymax"]]
@@ -138,6 +230,40 @@ server <- function(input, output, session) {
     sf_obj$NUTS_NAME <- nuts2_name
     sf_obj$year <- 2024
     
+    #nirv calculation and appending
+    # Ensure AOI is your selected polygon (sf_obj) in EPSG:4326
+    aoi_sel_4326 <- sf::st_transform(sf_obj, 4326)
+    
+    # Make sure folder exists
+    dir.create("./nirv_data", showWarnings = FALSE, recursive = TRUE)
+    
+    nirv_values <- list()
+    
+    for (i in seq_len(nrow(month_specs))) {
+      m <- month_specs[i, ]
+      
+      out_tif <- file.path("./nirv_data", paste0("sentinel2_lcpri_composite_", m$month_name, "_2024.tif"))
+      
+      mean_nirv <- compute_mean_nirv_month(
+        aoi_sf_4326 = aoi_sel_4326,
+        start_date  = m$start_date,
+        end_date    = m$end_date,
+        out_tif     = out_tif
+      )
+      
+      nirv_values[[paste0("NIRv_", m$month_name)]] <- mean_nirv
+    }
+    
+    # Attach to sf object as new columns: NIRv_march, NIRv_april, NIRv_may, NIRv_june
+    for (nm in names(nirv_values)) {
+      sf_obj[[nm]] <- nirv_values[[nm]]
+    }
+    
+    # then store it (same as you already do)
+    #drawn_polygons(sf_obj)
+    
+    
+    
     # --- Pull 2024 model features for that NUTS_NAME from df ---
     # df must exist in your environment and contain NUTS_NAME + year
     df <- arrow::read_parquet("../data/model_data_all.parquet")
@@ -152,6 +278,7 @@ server <- function(input, output, session) {
     
     # Choose which columns to copy into the sf object:
     # - all mean_sif_* and mean_c3_share_* columns (as you requested)
+    #nuts2_name <- grep("^NUTS_", names(row_2024), value = TRUE)
     sif_cols <- grep("^mean_sif_", names(row_2024), value = TRUE)
     c3_cols  <- grep("^mean_c3_share_", names(row_2024), value = TRUE)
     feature_cols <- c(sif_cols, c3_cols)
@@ -168,9 +295,43 @@ server <- function(input, output, session) {
       addPolygons(data = sf_obj, group = "drawn")
   })
   
+  pred_value <- reactiveVal(NULL)
+  
+  observeEvent(input$run_pred, {
+    req(drawn_polygons())
+    
+    sf_obj <- drawn_polygons()
+    
+    # Build 1-row model input (drop geometry + irrelevant cols)
+    newdata <- sf::st_drop_geometry(sf_obj) %>%
+      tibble::as_tibble()
+    
+    # Remove columns the model should not see (safe even if they don't exist)
+    newdata <- newdata %>%
+      dplyr::select(-dplyr::any_of(c("geometry", "croptype", "NUTS_NAME", "year")))
+    
+    # Ensure we have exactly the columns the model expects:
+    # - add any missing predictors as NA
+    missing_cols <- setdiff(model_predictors, names(newdata))
+    for (mc in missing_cols) newdata[[mc]] <- NA_real_
+    
+    # - drop any extras
+    newdata <- newdata %>% dplyr::select(dplyr::all_of(model_predictors))
+    
+    # Predict (returns tibble with .pred)
+    test_predictions <- predict(lm_final_fit, new_data = newdata)
+    
+    pred_value(test_predictions$.pred[[1]])
+  })
+  
   output$sf_print <- renderPrint({
     drawn_polygons()
   })
+  
+  output$pred_print <- renderPrint({
+    pred_value()
+  })
+  
 }
 
 
