@@ -383,7 +383,7 @@ fmla <- Winterweizen ~ mean_sif_Mar + mean_sif_Apr + mean_sif_May + mean_sif_Jun
   mean_sif_Jul + mean_c3_share_Mar + mean_c3_share_Apr + mean_c3_share_May + mean_c3_share_Jun +
   mean_c3_share_Jul + mean_temp_2m_Mar + mean_temp_2m_Apr + mean_temp_2m_May + mean_temp_2m_Jun +
   mean_temp_2m_Jul
-model <- lm(fmla, data = train_complete[, -c(1,2)])
+model <- lm(Winterweizen ~ ., data = train_complete[, -c(1,2)])
 
 # model summary
 summary(model)
