@@ -100,16 +100,17 @@ lm_final_fit <- fit(
 )
 
 
-#test_predictions <- predict(lm_final_fit, new_data = test_df) %>%
-#  bind_cols(test_df %>% select(Winterweizen))
+test_predictions <- predict(lm_final_fit, new_data = test_df) %>%
+  bind_cols(test_df %>% select(Winterweizen))
 
-test_predictions <- predict(lm_final_fit, new_data = test_df)
-
+#test_predictions <- predict(lm_final_fit, new_data = test_df)
+colnames(test_df)
 yardstick::metrics(
   test_predictions,
   truth = Winterweizen,
   estimate = .pred
-)
+) %>%
+filter(.metric != 'rsq')
 
 #-----------------------xgboost-------------------------------------------------
 library(xgboost)
