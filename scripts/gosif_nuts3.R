@@ -1,6 +1,7 @@
 library(terra)
 library(sf)
 library(tidyverse)
+library(lubridate)
 library(giscoR)
 library(data.table)
 
@@ -65,8 +66,10 @@ levels(crop_type)
 levels(crop_type) <- data.frame(value = crop_classes$code, crop = crop_classes$label)
 # colors for each crop type for plotting purposes
 n_classes <- nrow(crop_classes)
-palette_crop <- c("#FFFFFF","#0070FF","#00BFFF","#87CEFA","#ADD8E6","#F4A460","#FFA500","#FF8C00","#FF00FF","#D2B48C",
-                  "#8B4513","#8400A8","#FFFF99","#D1FF73","#89CD66","#4E7500","#FFBEBE","#FF7F50","#004C70","#CCCCCC")
+palette_crop <- c("#FFFFFF","#0070FF","#00BFFF","#87CEFA","#ADD8E6","#F4A460",
+                  "#FFA500","#FF8C00","#FF00FF","#D2B48C","#8B4513","#8400A8",
+                  "#FFFF99","#D1FF73","#89CD66","#4E7500","#FFBEBE","#FF7F50",
+                  "#004C70","#CCCCCC")
 palette_crop <- palette_crop[1:n_classes]
 
 
@@ -80,7 +83,6 @@ lines(munich_poly_utm, col = "black", lwd = 2)
 
 
 #-------------- convert crop raster to sif's crs------------ 
-
 crop_cropped_wgs84 <- project(crop_cropped, crs(r_cropped))
 
 
@@ -96,33 +98,28 @@ lines(munich_poly, col = "black", lwd = 2)
 points(munich_coords, pch = 3, col = "red", lwd = 2)
 text(11.576, 48.15, "Munich", col = "red", pos = 3)
 
+#------------ SIF area, how many polygons to make for oco2?
+
+df <- readRDS('../data/oco2_sif.rds')
+
+df_2024 <- df |> dplyr::filter(year(Delta_Time) == 2024)
+
+sum(df_2024$total_area_m2/1e+6)
 
 
 
 
 ################################################################################
-#---------------------zonal stat 1 file-----------------------------------------
+#---------------------gosif zonal stats-----------------------------------------
+################################################################################
+
 
 nuts1 <- gisco_get_nuts(year = 2021,  resolution = "10", nuts_level = 1, epsg = 4326)
+nuts3 <- gisco_get_nuts(year = 2021, resolution = "10", nuts_level = 3, epsg = 4326)
 
 bavaria_sf <- subset(nuts1, NUTS_ID == "DE2")
 bavaria_v  <- vect(bavaria_sf) 
 
-# gosif raster
-gosif_202405 <- rast('../data/enhanced_sif/gosif/GOSIF_2024.M05.tif')
-
-# necessary transformations to correct sif value's range
-gosif_202405[gosif_202405 >= 32766] <- NA
-gosif_202405 <- gosif_202405 * 0.0001
-
-#crs(gosif_202405)
-
-
-gosif_bav_crop <- crop(gosif_202405, bavaria_v)
-gosif_bav_crop <- mask(gosif_bav_crop, bavaria_v)
-
-#plot(bavaria_v)
-#plot(gosif_bav_crop, ext = ext(8.5, 14, 47.0, 50.8))
 
 # raster has different fields in germany marked, colored (winter wheat, maize, soyabean etc.)
 crop_type <- rast('../data/crop_type_tif/croptypes_2024.tif')
@@ -132,62 +129,57 @@ crop_classes <- readr::read_delim("../data/crop_type_tif/LEGEND_CropTypes.txt", 
 colnames(crop_classes) <- c("code", "label")
 levels(crop_type) <- data.frame(value = crop_classes$code, crop = crop_classes$label)
 
-#crs(crop_type)
-
-# crop down crop type raster to bavaria's border
-
+# Convert gosif to UTM to do zonal stats with crop type raster
+# convert vec object to utm
 bavaria_utm <- project(bavaria_v, "EPSG:32632")
 
 # Crop the Germany-wide crop raster down to Bavaria first 
 crop_type_bav <- crop(crop_type, bavaria_utm)
 crop_type_bav <- mask(crop_type_bav, bavaria_utm)
 
+
+# gosif raster for 2024 May (month 5)
+gosif_202405 <- rast('../data/enhanced_sif/gosif/GOSIF_2024.M05.tif')
+
+# necessary transformations to correct sif value's range
+gosif_202405[gosif_202405 >= 32766] <- NA
+gosif_202405 <- gosif_202405 * 0.0001
+
+gosif_bav_crop <- crop(gosif_202405, bavaria_v)
+gosif_bav_crop <- mask(gosif_bav_crop, bavaria_v)
+
+#plot(bavaria_v)
+#plot(gosif_bav_crop, ext = ext(8.5, 14, 47.0, 50.8))
+
 # Project the (already Bavaria-masked) SIF raster to UTM
-# (continuous values -> bilinear is appropriate)
+# (continuous values -> bilinear)
 gosif_bav_utm <- project(gosif_bav_crop, "EPSG:32632", method = "bilinear")
 
-# (optional) ensure it’s still strictly within Bavaria border after reprojection
+# ensure it’s still strictly within Bavaria border after reprojection
 gosif_bav_utm <- mask(gosif_bav_utm, bavaria_utm)
 
 # make each sif pixel into polygon
 zones <- as.polygons(gosif_bav_utm, dissolve = FALSE, values = TRUE, na.rm = TRUE)
 zones$zone_id <- 1:nrow(zones)
 
-# method 1: extract
-# Too slow
-# Exact extraction returns a row per (zone_id, crop_value) combination at 10m level,
-# plus a coverage weight/fraction for partial overlaps.
-# ex <- terra::extract(crop_type_bav, zones, exact = TRUE)
-
-# Terra column naming can differ by version; these are typical:
-# - "ID" for polygon id
-# - "crop" or the raster layer name for class value
-# - "fraction" (or sometimes "weight") for coverage
-#names(ex)
-
-
-# method 1: use data.table to get crop stats for each pixel using readValues
+# Use data.table to get crop stats for each pixel using readValues
 
 zone_r <- rasterize(zones, crop_type_bav, field = "zone_id", touches = TRUE)
-#tab <- crosstab(zone_r, crop_type_bav, long = TRUE)   # columns like: zone_id, crop, freq
-#names(tab) <- c("zone_id", "code", "n")
 
+# check if rasterize gosif polygons match
 compareGeom(zone_r, crop_type_bav, stopOnError = TRUE)
-
 
 s <- c(zone_r, crop_type_bav)
 names(s) <- c("zone_id", "code")
-# s: two-layer SpatRaster, names = c("zone_id","code")
 
 nr <- nrow(s)
-
 chunk_rows <- 2000L
 rows  <- seq.int(1L, nr, by = chunk_rows)
 nrows <- pmin(chunk_rows, nr - rows + 1L)
 
 out_list <- vector("list", length(rows))
 
-# IMPORTANT: open files for reading
+# open files for reading
 readStart(s)
 on.exit(readStop(s), add = TRUE)
 
@@ -217,7 +209,11 @@ setorder(tab, zone_id, -count)
 
 head(tab)
 
-legend_df <- levels(crop_type)[[1]]  # columns: value, crop
+# do gc() here to clear unecessary RAM from the for loop operations
+
+
+# columns: value, crop
+legend_df <- levels(crop_type)[[1]]  
 
 comp <- dplyr::as_tibble(tab) %>%
   dplyr::group_by(zone_id) %>%
@@ -229,19 +225,19 @@ comp <- dplyr::as_tibble(tab) %>%
   dplyr::left_join(legend_df, by = c("code" = "value"))
 
 comp %>%
-  group_by(zone_id) %>%
-  summarise(sum_pct = sum(pct)) %>%
+  dplyr::group_by(zone_id) %>%
+  dplyr::summarise(sum_pct = sum(pct)) %>%
   summary()
 
-# Compute “vegetated total” per zone (exclude code 0)
+# Compute “vegetated total” per zone (exclude code 0 = no_data)
 veg_totals <- comp %>%
-  filter(code != 0) %>%           # exclude no_data
-  group_by(zone_id) %>%
-  summarise(veg_cells = sum(count), .groups = "drop")
+  dplyr::filter(code != 0) %>%           
+  dplyr::group_by(zone_id) %>%
+  dplyr::summarise(veg_cells = sum(count), .groups = "drop")
 
 # Compute winter wheat share among vegetation
 ww_share_veg <- comp %>%
-  dplyr::filter(code == 11) %>%           # winter wheat
+  dplyr::filter(code == 11) %>%          
   dplyr::select(zone_id, ww_cells = count) %>%
   dplyr::left_join(veg_totals, by = "zone_id") %>%
   dplyr::mutate(ww_pct_veg = ww_cells / veg_cells)
@@ -251,16 +247,7 @@ ww_zones <- ww_share_veg %>%
   dplyr::filter(!is.na(ww_pct_veg), ww_pct_veg >= 0.05) %>%
   dplyr::pull(zone_id)
 
-# ww_zones <- comp %>%
-#   dplyr::filter(code == 11, pct >= 0.1) %>%
-#   dplyr::pull(zone_id) %>%
-#   unique()
-
 length(ww_zones)
-
-
-
-
 
 # comp <- comp %>%
 #   select(-ww_pct_veg)
@@ -271,23 +258,21 @@ length(ww_zones)
 #     by = "zone_id"
 #   )
 
-
 #-----------plot the gosif pixels that have wheat share > 5%
 
-# 1) Download NUTS3 in EPSG:4326 (lightweight) and filter to Bavaria (DE2...)
-nuts3 <- gisco_get_nuts(year = 2021, resolution = "10", nuts_level = 3, epsg = 4326)
+# filter bavaria
 bav_nuts3_sf <- nuts3[grepl("^DE2", nuts3$NUTS_ID), ]
-# Convert to terra vector + project to UTM 
+# convert to terra vec + utm
 bav_nuts3_v <- terra::vect(bav_nuts3_sf)
 bav_nuts3_v <- terra::project(bav_nuts3_v, "EPSG:32632")
 
 
 zones_ww <- zones[zones$zone_id %in% ww_zones, ]
 
-# Plot SIF background + outline qualifying pixels
+# plot sif + qualifying pixels
 plot(gosif_bav_utm, main = "GOSIF May 2024 (Bavaria) – pixels with ≥5% winter wheat")
-lines(zones, col = "grey60", lwd = 0.3)      # optional: show all pixel boundaries faintly
-lines(zones_ww, col = "red", lwd = 1.8)      # highlight qualifying pixels
+lines(zones, col = "grey60", lwd = 0.3)      
+lines(zones_ww, col = "red", lwd = 1.8)     
 lines(bav_nuts3_v, col = "blue", lwd = 1.8)
 
 
