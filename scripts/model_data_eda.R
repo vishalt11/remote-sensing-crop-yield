@@ -446,7 +446,7 @@ test_df <- test_df |> mutate(
 rmse <- sqrt(mean((test_df[test_df$NUTS_NAME != 'Oberfranken',]$pred_Winterweizen - test_df[test_df$NUTS_NAME != 'Oberfranken',]$Winterweizen)^2, na.rm = TRUE))
 rmse
 
-#----------------------------------xgboost----------------------------
+#----------------------------------xgboost--------------------------------------
 
 train_df <- XY_all |> filter(year <= 2023)
 test_df  <- XY_all |> filter(year == 2024)
@@ -458,6 +458,27 @@ train_df_mean_imp <- train_df |>
       ~ ifelse(is.na(.), mean(., na.rm = TRUE), .)
     )
   )
+
+
+#------------------------------EDA phase 2--------------------------------------
+
+library(sf)
+library(tidyverse)
+library(lubridate)
+
+sif <- readRDS('../data/oco2_sif_mmode_corrected.rds')
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

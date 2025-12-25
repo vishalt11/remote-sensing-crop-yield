@@ -16,15 +16,15 @@ library(tidyverse)
 
 #-------------------------------------------------------------------------------
 # 1 file test
-nc_data <- nc_open('../data/oco2SIF10r_2022.01.01_2024.03.31/oco2_LtSIF_211231_B11012Ar_220627183447s.nc4')
+nc_data <- nc_open('../data/oco2SIF10r_2015.01.01_2021.12.31_bu/oco2_LtSIF_150110_B10206r_200730161413s.SUB.nc4')
 
-attributes(nc_data$var)$names
+attributes(nc_data$var)
 
 lon_corners <- ncvar_get(nc_data,"Longitude_Corners")
 
 #-------------------------------------------------------------------------------
 # bulk load
-files <- list.files('../data/oco2SIF10r_2015.01.01_2021.12.31/', pattern = "\\.nc4$", full.names = TRUE)
+files <- list.files('../data/oco2SIF10r_2015.01.01_2021.12.31_bu/', pattern = "\\.nc4$", full.names = TRUE)
 
 nc_list <- list()
 
@@ -64,7 +64,8 @@ lon <- ncvar_get(nc_list$a663,"Longitude")
 # Variables of interest
 vars_to_extract <- c("Daily_SIF_740nm", "Delta_Time", "Latitude", "Longitude", "Latitude_Corners",
                      "Longitude_Corners", "Quality_Flag", "Meteo/specific_humidity", "Meteo/surface_pressure",
-                     "Meteo/temperature_skin", "Meteo/temperature_two_meter", "Meteo/vapor_pressure_deficit")
+                     "Meteo/temperature_skin", "Meteo/temperature_two_meter", "Meteo/vapor_pressure_deficit",
+                     "Metadata/MeasurementMode")
 
 df_list <- list()
 
@@ -141,7 +142,7 @@ combined_df$Delta_date <- as.factor(combined_df$Delta_date)
 #unique(format(combined_df$Delta_Time, "%Y-%m-%d"))
 
 #write.csv(combined_df, file = '../data/SIF_v1.csv', row.names=FALSE)
-base::saveRDS(combined_df, file = '../data/SIF_v1.rds')
+base::saveRDS(combined_df, file = '../data/SIF_v1_corrected.rds')
 
 #-------------------------------------------------------------------------------
 
@@ -563,7 +564,118 @@ polys_with_crop <- polys_with_crop %>%
     )
   )
 
+#-----------------------m mode correction for cleaned SIF-----------------------
 
+library(sf)
+library(tidyverse)
+library(giscoR)
+
+
+df <- readRDS('../data/SIF_v1.rds')
+df1 <- readRDS('../data/SIF_v2_corrected.rds')
+df2 <- readRDS('../data/SIF_v3_corrected.rds')
+
+
+table(df$Quality_Flag)
+
+table(df1$Metadata.MeasurementMode)
+table(df2$Metadata.MeasurementMode)
+
+temp_df <- readRDS('../data/SIF_v1_corrected.rds')
+
+df3 <- readRDS('../data/oco2_sif.rds')
+
+table(df3$Metadata.MeasurementMode)
+
+table(temp_df$Metadata.MeasurementMode)
+
+
+lookup_mm <- temp_df %>%
+  select(
+    Delta_Time,
+    Lat_corner1, Lat_corner2, Lat_corner3, Lat_corner4,
+    Lon_corner1, Lon_corner2, Lon_corner3, Lon_corner4,
+    Metadata.MeasurementMode
+  )
+
+geom <- st_geometry(df3)  # save geometry
+
+df3_filled <- df3 %>%
+  st_drop_geometry() %>%
+  left_join(
+    lookup_mm,
+    by = c(
+      "Delta_Time",
+      "Lat_corner1", "Lat_corner2", "Lat_corner3", "Lat_corner4",
+      "Lon_corner1", "Lon_corner2", "Lon_corner3", "Lon_corner4"
+    ),
+    suffix = c("", "_temp")
+  ) %>%
+  mutate(
+    Metadata.MeasurementMode = if_else(
+      is.na(Metadata.MeasurementMode),
+      Metadata.MeasurementMode_temp,
+      Metadata.MeasurementMode
+    )
+  ) %>%
+  select(-Metadata.MeasurementMode_temp)
+
+# re-attach geometry, keep same CRS
+df3_filled <- st_sf(df3_filled, geometry = geom) %>%
+  st_set_crs(st_crs(df3))
+
+sum(is.na(df3$Metadata.MeasurementMode))
+table(df3$Metadata.MeasurementMode)
+
+sum(is.na(df3_filled$Metadata.MeasurementMode))
+table(df3_filled$Metadata.MeasurementMode)
+
+
+saveRDS(df3_filled, '../data/oco2_sif_mmode_corrected.rds')
+
+
+
+# set.seed(42)
+# 
+# n_samp <- min(100000, nrow(df))   # in case df has < 100k rows
+# df_samp <- df %>%
+#   slice_sample(n = n_samp) %>%
+#   filter(!is.na(Latitude), !is.na(Longitude), !is.na(Daily_SIF_740nm))
+# 
+# # 2) Germany basemap (gisco)
+# de <- gisco_get_countries(country = "DE", resolution = "10", year = "2024", epsg = "4326")
+# 
+# # 3) Convert sampled df to sf points (WGS84 lon/lat)
+# pts <- st_as_sf(
+#   df_samp,
+#   coords = c("Longitude", "Latitude"),
+#   crs = 4326,
+#   remove = FALSE
+# )
+# 
+# # Optional: keep only points that fall inside Germany
+# pts_de <- pts[st_within(pts, de, sparse = FALSE), ]
+# 
+# # 4) Plot
+# ggplot() +
+#   geom_sf(data = de, fill = "grey95", color = "black", linewidth = 0.5) +
+#   geom_point(
+#     data = pts_de,
+#     aes(x = Longitude, y = Latitude, color = Daily_SIF_740nm),
+#     size = 0.6, alpha = 0.6
+#   ) +
+#   scale_color_viridis_c(option = "C", name = "Daily SIF (740nm)") +
+#   coord_sf(
+#     xlim = c(5.5, 15.5),   
+#     ylim = c(47.0, 55.2), 
+#     expand = FALSE
+#   ) +  
+#   labs(
+#     title = "Sampled Daily SIF (740nm) over Germany",
+#     subtitle = paste0("n = ", nrow(pts_de), " points inside Germany (sampled from ", n_samp, ")"),
+#     x = "Longitude", y = "Latitude"
+#   ) +
+#   theme_minimal()
 
 
 

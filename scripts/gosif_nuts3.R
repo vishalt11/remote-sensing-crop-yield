@@ -249,6 +249,36 @@ ww_zones <- ww_share_veg %>%
 
 length(ww_zones)
 
+nuts3_bav_sf <- nuts3[grepl("^DE2", nuts3$NUTS_ID), ]
+# convert to terra vec + utm
+nuts3_bav_v <- terra::vect(bav_nuts3_sf)
+nuts3_bav_utm <- terra::project(bav_nuts3_v, "EPSG:32632")
+
+zones_ww <- zones[zones$zone_id %in% ww_zones, ]
+
+gosif_col <- names(gosif_bav_utm)[1]
+
+pts <- centroids(zones_ww)
+
+join <- terra::extract(nuts3_bav_utm, pts)
+
+pix_df <- as.data.frame(zones_ww)[, c("zone_id", gosif_col)]
+
+pix_df <- bind_cols(pix_df, join[, c("NUTS_ID", "NUTS_NAME")])
+
+nuts3_gosif_ww <- pix_df %>%
+  filter(!is.na(.data[[gosif_col]]), !is.na(NUTS_ID)) %>%
+  group_by(NUTS_ID, NUTS_NAME) %>%
+  summarise(
+    n_pixels = n(),
+    mean_gosif = mean(.data[[gosif_col]], na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(n_pixels))
+
+nuts3_gosif_ww
+
+
 # comp <- comp %>%
 #   select(-ww_pct_veg)
 # 
@@ -282,15 +312,6 @@ lines(bav_nuts3_v, col = "blue", lwd = 1.8)
 
 
 #------------------------gosif zonal stats--------------------------------------
-
-
-
-
-
-
-
-
-
 
 
 

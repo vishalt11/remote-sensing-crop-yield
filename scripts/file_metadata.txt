@@ -1,0 +1,17 @@
+all_model_data_preprocess.R - reduce cleaned day wise oco 2 sif, sen2 data into model ready data (nuts2 res) 
+model_data_eda.R - eda for model data
+sen2_model_data_preprocess.R - reduce cleaned month wise sen2 data into model read data (nuts3 res)
+dashboard.R - shiny dashboard                  
+zonal_crop_stat.R - compute zonal stats croptype + SIF polygons
+nirv_extract_test.R - get sen2 data using stac 
+model_final.R - modelling code      
+test.R - test random R code
+process_nc4_nonsubset.R - preprocess nc4 files (non-subsetted version)         
+globe_test.R                 
+mosaic_builder.R   
+plot_utm_tiles.R     
+test_nc4.R - initial code to test nc4 files
+gosif_nuts3.R - gosif work                
+ndvi.R             
+s2_band_dl.R         
+visualize_sif_polys.R - preprocess nc4 files (subsetted version) + visualize them
