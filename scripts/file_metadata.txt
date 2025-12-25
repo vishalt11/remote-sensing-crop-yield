@@ -1,3 +1,5 @@
+What each script does?
+
 all_model_data_preprocess.R - reduce cleaned day wise oco 2 sif, sen2 data into model ready data (nuts2 res) 
 model_data_eda.R - eda for model data
 sen2_model_data_preprocess.R - reduce cleaned month wise sen2 data into model read data (nuts3 res)

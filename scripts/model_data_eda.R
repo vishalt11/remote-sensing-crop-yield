@@ -465,22 +465,132 @@ train_df_mean_imp <- train_df |>
 library(sf)
 library(tidyverse)
 library(lubridate)
+library(scales)
+library(giscoR)
 
 sif <- readRDS('../data/oco2_sif_mmode_corrected.rds')
+head(sif, 3)
+sif[3,]$crop_stats
+
+idx <- sapply(sif$crop_stats, function(df) {
+  if (is.null(df) || nrow(df) == 0) return(FALSE)
+  any(df$code == "winter_wheat" & df$area_pct >= 0, na.rm = TRUE)
+})
+
+sif <- sif[idx,]
+
+c4_codes <- c("maize")
+`%!in%` <- Negate(`%in%`)
+
+sif <- sif |>
+  mutate(
+    wheat_share = purrr::map_dbl(crop_stats, function(cs) {
+      wheat_row <- cs[cs$code == "winter_wheat", ]
+      wheat_pct <- wheat_row$area_pct
+      total_pct <- sum(cs$area_pct)
+      wheat_pct / total_pct
+    }),
+    
+    c3_share = purrr::map_dbl(crop_stats, function(cs) {
+      # total crop pct inside polygon
+      total_pct <- sum(cs$area_pct)
+      # sum of area_pct for all C3 crops
+      c3_pct <- sum(cs$area_pct[cs$code %!in% c4_codes])
+      # normalized C3 fraction
+      c3_pct / total_pct
+    })
+  )
+
+sif[sif$wheat_share == 1,]$crop_stats
 
 
+#df <- readRDS('../data/SIF_v3_corrected.rds')
+
+# Plot 1------------------------------------------------------------------------
+# plot y =  daily sif, x = months stacked yearwise
+
+plot_df <- sif |> 
+  filter(wheat_share <= 0.4) |>
+  select(-c(crop_stats)) |> 
+  st_drop_geometry()
+
+head(plot_df,1)
+
+ggplot(data = plot_df, aes(x = as.Date(Delta_date), y = Daily_SIF_740nm)) +
+  geom_point(aes(color = Daily_SIF_740nm), size = 2.2, alpha = 0.9)
+
+# 1) Build seasonal x coordinate (month-day only; all years stacked)
+df_season <- plot_df %>%
+  mutate(
+    # use Delta_date if present; otherwise derive from Delta_Time
+    date = if ("Delta_date" %in% names(.)) as.Date(Delta_date) else as.Date(Delta_Time),
+    year = factor(year(date)),
+    mon  = month(date),
+    day  = day(date)
+  ) %>%
+  # keep only Feb..Jul
+  filter(mon >= 2, mon <= 7) %>%
+  # create a "reference-year" date so Feb/Mar/... line up across years
+  # (2001 is non-leap; avoids Feb 29 issues)
+  mutate(
+    x_ref = as.Date(sprintf("2001-%02d-%02d", mon, day))
+  ) %>%
+  # guard against impossible dates (e.g., Feb 29 -> NA in non-leap ref year)
+  filter(!is.na(x_ref))
+
+# 2) Month-start breaks (only label first of each month)
+month_breaks <- as.Date(paste0("2001-", sprintf("%02d", 2:7), "-01"))
 
 
+# 3) Plot
+ggplot(df_season, aes(x = x_ref, y = Daily_SIF_740nm, color = year)) +
+  geom_point(alpha = 0.85, size = 2) +
+  scale_x_date(
+    limits = range(month_breaks),
+    breaks = month_breaks,
+    labels = scales::date_format("%b")  # Feb, Mar, Apr, ...
+  ) +
+  labs(
+    x = NULL,
+    y = "Daily SIF (740nm)",
+    color = "Year"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "right"
+  )
 
+# Plot 2------------------------------------------------------------------------
+# plot sif polygons/points with at least 70% winter wheat share
+nuts3 <- gisco_get_nuts(year = 2021, resolution = "03", nuts_level = 3, epsg = 4326)
+bav_nuts3 <- nuts3 %>% filter(substr(NUTS_ID, 1, 3) == "DE2")  # Bavaria is DE2 at NUTS1
 
+plot_df <- sif |> 
+  filter(wheat_share >= 0.3) |>
+  select(-c(crop_stats))
 
+pts <- plot_df %>%
+  mutate(
+    date = as.Date(Delta_Time),
+    year = factor(year(date))
+  ) %>%
+  st_make_valid() %>%
+  st_point_on_surface() %>%          # returns POINT geometry inside each polygon
+  mutate(
+    lon = st_coordinates(.)[, 1],
+    lat = st_coordinates(.)[, 2]
+  )
 
+# OPTIONAL: keep only points that fall inside Bavaria NUTS3 (recommended)
+pts_bav <- st_join(pts, bav_nuts3, join = st_within, left = FALSE)
 
-
-
-
-
-
+ggplot() +
+  geom_sf(data = bav_nuts3, color = "darkblue", fill = "grey95", linewidth = 0.4) +
+  geom_sf(data = pts_bav, aes(fill = year), shape = 21, 
+          colour = "black", size = 1.5, alpha = 0.8, stroke = 0.6) +
+  coord_sf(crs = 4326) +
+  labs(fill = "Year", title = '30% wheat share distribution') +
+  theme_minimal(base_size = 12)
 
 
 
