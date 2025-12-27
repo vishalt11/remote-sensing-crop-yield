@@ -16,4 +16,4 @@ test_nc4.R - initial code to test nc4 files
 gosif_nuts3.R - gosif work                
 ndvi.R             
 s2_band_dl.R         
-visualize_sif_polys.R - preprocess nc4 files (subsetted version) + visualize them
+process_nc4_subset_eda.R - preprocess nc4 files (subsetted version) + visualize them

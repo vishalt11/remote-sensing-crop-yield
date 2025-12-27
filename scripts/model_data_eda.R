@@ -538,11 +538,9 @@ df_season <- plot_df %>%
   # guard against impossible dates (e.g., Feb 29 -> NA in non-leap ref year)
   filter(!is.na(x_ref))
 
-# 2) Month-start breaks (only label first of each month)
 month_breaks <- as.Date(paste0("2001-", sprintf("%02d", 2:7), "-01"))
 
 
-# 3) Plot
 ggplot(df_season, aes(x = x_ref, y = Daily_SIF_740nm, color = year)) +
   geom_point(alpha = 0.85, size = 2) +
   scale_x_date(
@@ -575,7 +573,7 @@ pts <- plot_df %>%
     year = factor(year(date))
   ) %>%
   st_make_valid() %>%
-  st_point_on_surface() %>%          # returns POINT geometry inside each polygon
+  st_point_on_surface() %>%          
   mutate(
     lon = st_coordinates(.)[, 1],
     lat = st_coordinates(.)[, 2]
