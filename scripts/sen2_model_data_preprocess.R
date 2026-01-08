@@ -71,10 +71,14 @@ Y_all <- Y_all |>
 
 colSums(is.na(Y_all))
 
-Y_final <- Y_all |> drop_na()
+#Y_final <- Y_all |> drop_na()
+
+Y_all$Winterweizen <- Y_all$Winterweizen/10
 
 
-saveRDS(Y_final, file = 'y_final_sen2.rds')
+Y_all <- Y_all |> select(name, Winterweizen, year, NUTS_ID, NUTS_NAME)
+
+saveRDS(Y_all, file = 'yield.rds')
 
 
 sen2_wide <- sen2_indices |>
@@ -125,4 +129,24 @@ XY_all |> filter(nuts3_id == 'DE249')
 
 sen2_indices |> filter(nuts3_id == 'DE249')
 
+#-------------------------------------------------------------------------------
 
+
+library(tidyverse)
+
+df <- readRDS('./yield.rds')
+
+df <- df |> drop_na()
+
+regions_to_remove <- c("Bayern", "Oberbayern", "Niederbayern", "Oberpfalz","Oberfranken", 
+                       "Mittelfranken", "Unterfranken", "Schwaben")
+
+df <- df[!df$name %in% regions_to_remove,]
+
+df |>
+  group_by(year) |>
+  count()
+
+df <- df |> select(Winterweizen, year, NUTS_ID, NUTS_NAME)
+
+saveRDS(df, 'yield_nuts3.rds')

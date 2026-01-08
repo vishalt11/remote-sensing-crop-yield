@@ -117,6 +117,25 @@ cols_for_months <- function(months_selected) {
 
 
 # ----------------------------
+# Historical yield data (NUTS3 Bavaria)
+# ----------------------------
+yield_nuts3 <- readRDS("yield_nuts3.rds") |>
+  dplyr::filter(year >= 2016, year <= 2023)
+
+yield_nuts3$Winterweizen <- round(yield_nuts3$Winterweizen, 2)
+colnames(yield_nuts3) <- c('Yield', 'year', 'NUTS_ID', 'NUTS_NAME')
+
+print('retrieve NUTS2 geometries')
+# ---- Bavaria boundaries (NUTS2) ----
+nuts2_all <- giscoR::gisco_get_nuts(year = "2021", resolution = "03", nuts_level = 2, epsg = 4326)
+bavaria_nuts2 <- subset(nuts2_all, grepl("^DE2", NUTS_ID))
+
+print('retrieve NUTS3 geometries')
+# ---- Bavaria boundaries (NUTS3) for historical tab ----
+nuts3_all <- giscoR::gisco_get_nuts(year = "2021", resolution = "03", nuts_level = 3, epsg = 4326)
+bavaria_nuts3 <- subset(nuts3_all, grepl("^DE2", NUTS_ID))
+
+# ----------------------------
 # UI
 # ----------------------------
 ui <- fluidPage(
@@ -132,11 +151,11 @@ ui <- fluidPage(
   
   tags$head(tags$link(rel = "stylesheet", href = "custom.css")),
   
-  #titlePanel("Crop Yield Predictor"),
+  titlePanel("Crop Yield Predictor"),
   
   tabsetPanel(
     tabPanel(
-      "Crop yield predictor",
+      "Crop Yield Predictor",
       sidebarLayout(
         sidebarPanel(
       
@@ -189,19 +208,58 @@ ui <- fluidPage(
             actionButton("run_pred", "Predict Yield", class = "btn-success"),
           )
         ),
-        mainPanel(leafletOutput("map", height = 600))
+        mainPanel(
+          div(
+            class = "map-section",
+            leafletOutput("map", height = 600)
+            )
+          )
       )
     ),
     tabPanel(
       "Historical data",
-      fluidRow(
-        column(
-          12,
-          h4("Historical data"),
-          p("Coming soon.")
+      sidebarLayout(
+        sidebarPanel(
+          width = 6,
+          div(
+            class = "panel-section year-inline",
+            #tags$label("Year:", `for` = "hist_year", class = "year-label"),
+            #h6("Select Year"),
+            selectInput(
+              "hist_year",
+              label = NULL,
+              choices = sort(unique(yield_nuts3$year), decreasing = TRUE),
+              selected = 2023
+            ),
+            selectInput(
+              "hist_crop_type",
+              label = NULL,
+              choices = c('Winter Wheat', 'Maize', 'Rye', 'Barley'),
+              selected = 'Winter Wheat'
+            )
+          ),
+          
+          div(
+            class = "panel-section-last",
+            h6("Yield Table"),
+            div(
+              style = "overflow-x: auto; width: 100%;",
+              #tableOutput("hist_table")
+              DT::dataTableOutput("hist_table")
+            )
+          )
+        ),
+        mainPanel(
+          width = 6,
+          div(
+            class = "map-section",
+            leafletOutput("hist_map", height = 600)
+          )
         )
       )
     )
+    
+  #------ end tabs------------  
   )
 )
 
@@ -213,9 +271,171 @@ server <- function(input, output, session) {
   drawn_polygons <- reactiveVal(NULL)
   pred_value <- reactiveVal(NULL)
   
-  # ---- Bavaria boundaries (NUTS2) ----
-  nuts2_all <- giscoR::gisco_get_nuts(year = "2021", resolution = "03", nuts_level = 2, epsg = 4326)
-  bavaria_nuts2 <- subset(nuts2_all, grepl("^DE2", NUTS_ID))
+  
+  #-----------------------------------------------------------------------------
+  # 1st page server code
+  #-----------------------------------------------------------------------------
+  
+  print('2nd page server routine')
+
+  
+  #Reactive filtered data for selected year
+  hist_df_year <- reactive({
+    req(input$hist_year)
+    yield_nuts3 %>%
+      dplyr::filter(year == input$hist_year) %>%
+      dplyr::select(NUTS_ID, Yield, year)
+  })
+  
+  
+  #Table output (left)
+  # output$hist_table <- renderTable({
+  #   
+  #   df <- hist_df_year() %>%
+  #     dplyr::left_join(
+  #       sf::st_drop_geometry(bavaria_nuts3) %>%
+  #         dplyr::select(NUTS_ID, NUTS_NAME),
+  #       by = "NUTS_ID"
+  #     ) %>%
+  #     dplyr::select(
+  #       Winterweizen,
+  #       NUTS_NAME,
+  #       NUTS_ID
+  #     ) %>%
+  #     dplyr::arrange(dplyr::desc(Winterweizen))
+  #   
+  #   df
+  # },
+  # striped  = TRUE,
+  # bordered = TRUE,
+  # hover    = TRUE,
+  # spacing  = "xs"
+  # )
+  
+  output$hist_table <- DT::renderDataTable({
+    
+    df <- hist_df_year() %>%
+      dplyr::left_join(
+        sf::st_drop_geometry(bavaria_nuts3) %>%
+          dplyr::select(NUTS_ID, NUTS_NAME),
+        by = "NUTS_ID"
+      ) %>%
+      dplyr::select(
+        Yield,
+        NUTS_NAME,
+        NUTS_ID,
+        #year
+      ) %>%
+      dplyr::arrange(dplyr::desc(Yield))
+    
+    DT::datatable(
+      df,
+      rownames = FALSE,
+      options = list(
+        pageLength = 10,
+        lengthChange = FALSE,  # removes "Show X entries"
+        searching = FALSE,     # remove search bar (set TRUE if you want it)
+        ordering = TRUE,
+        info = FALSE
+      )
+    )
+  })
+  
+  
+  # map output (historical)
+  output$hist_map <- renderLeaflet({
+    # Join geometry + the selected year's yield values
+    sf_year <- bavaria_nuts3 %>%
+      dplyr::left_join(hist_df_year(), by = "NUTS_ID")
+    
+    # palette (NA => grey)
+    pal <- colorNumeric(
+      palette = "YlGn",
+      domain = yield_nuts3$Yield,
+      na.color = "#8c8c8c"
+    )
+    
+    leaflet(sf_year) %>%
+      addProviderTiles("CartoDB.Positron") %>%
+      fitBounds(
+        lng1 = sf::st_bbox(sf::st_union(sf::st_geometry(bavaria_nuts3)))[["xmin"]],
+        lat1 = sf::st_bbox(sf::st_union(sf::st_geometry(bavaria_nuts3)))[["ymin"]],
+        lng2 = sf::st_bbox(sf::st_union(sf::st_geometry(bavaria_nuts3)))[["xmax"]],
+        lat2 = sf::st_bbox(sf::st_union(sf::st_geometry(bavaria_nuts3)))[["ymax"]]
+      ) %>%
+      addPolygons(
+        fillColor = ~pal(Yield),
+        fillOpacity = 0.75,
+        color = "#2b2b2b",
+        weight = 1,
+        opacity = 1,
+        label = ~paste0(
+          NUTS_NAME, "<br>",
+          "Year: ", year, "<br>",
+          "Yield: ", ifelse(is.na(Yield), "NA", round(Yield, 2)), " t/ha"
+        ) %>% lapply(htmltools::HTML),
+        highlightOptions = highlightOptions(
+          weight = 3,
+          color = "#ffffff",
+          fillOpacity = 0.9,
+          bringToFront = TRUE
+        )
+      ) %>%
+      addLegend(
+        pal = pal,
+        values = yield_nuts3$Yield[!is.na(yield_nuts3$Yield)],
+        title = "Yield (t/ha)",
+        opacity = 1
+      )
+  })
+  
+  
+  
+  # update map when year changes
+  observeEvent(input$hist_year, {
+    sf_year <- bavaria_nuts3 %>%
+      dplyr::left_join(hist_df_year(), by = "NUTS_ID")
+    
+    pal <- colorNumeric(
+      palette = "YlGn",
+      domain = yield_nuts3$Yield,
+      na.color = "#8c8c8c"
+    )
+    
+    leafletProxy("hist_map", data = sf_year) %>%
+      clearShapes() %>%
+      clearControls() %>%
+      addPolygons(
+        fillColor = ~pal(Yield),
+        fillOpacity = 0.75,
+        color = "#2b2b2b",
+        weight = 1,
+        opacity = 1,
+        label = ~paste0(
+          NUTS_NAME, "<br>",
+          "Year: ", year, "<br>",
+          "Yield: ", ifelse(is.na(Yield), "NA", round(Yield, 2)), " t/ha"
+        ) %>% lapply(htmltools::HTML),
+        highlightOptions = highlightOptions(
+          weight = 3,
+          color = "#ffffff",
+          fillOpacity = 0.9,
+          bringToFront = TRUE
+        )
+      ) %>%
+      addLegend(
+        pal = pal,
+        values = yield_nuts3$Yield[!is.na(yield_nuts3$Yield)],
+        title = "Yield (t/ha)",
+        opacity = 1
+      )
+  })
+  
+  #-----------------------------------------------------------------------------
+  # 1st page server code
+  #-----------------------------------------------------------------------------
+  
+  print('1st page server routine')
   
   bavaria_outline_geom <- sf::st_union(sf::st_make_valid(bavaria_nuts2))
   bavaria_outline <- sf::st_as_sf(sf::st_sfc(bavaria_outline_geom), crs = 4326)
@@ -450,8 +670,6 @@ server <- function(input, output, session) {
       as.data.frame()
     rownames(train_df) <- train_ids
     
-    print('Model training data:')
-    print(train_df)
     
     # mice imputation on train only
     imp <- mice::mice(train_df, m = 5, maxit = 50, meth = "pmm", seed = 123, printFlag = FALSE)
@@ -490,6 +708,8 @@ server <- function(input, output, session) {
     
     pred_value(test_predictions$.pred[[1]])
   })
+  
+  
   
   
   # observeEvent(input$run_pred, {
