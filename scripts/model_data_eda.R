@@ -590,6 +590,39 @@ ggplot() +
   labs(fill = "Year", title = '30% wheat share distribution') +
   theme_minimal(base_size = 12)
 
+#----------------------------------------
+
+
+df <- read.csv('../data/oco2_sif_complete.csv')
+
+df <- df |> select(-crop_stats)
+
+df <- df |> filter(Daily_SIF_740nm <= 1.5 & Daily_SIF_740nm >= 0)
+
+ggplot(df, aes(x = Daily_SIF_740nm )) +
+  geom_density(fill = "skyblue", alpha = 0.7) +
+  labs(title = "Kernel Density Plot of Salary",
+       x = "Salary",
+       y = "Density")
+
+
+# 1. Create a basic boxplot to visualize the distribution
+boxplot(df$Daily_SIF_740nm, 
+        main = "Distribution of Predicted Daily SIF", 
+        ylab = "SIF (W m^-2 μm^-1 sr^-1)", 
+        col = "lightblue", 
+        border = "black",
+        horizontal = FALSE)
+
+# 2. Extract the specific outlier values
+# By default, R defines outliers as points > 1.5 * interquartile range (IQR)
+outliers <- boxplot.stats(df$Daily_SIF_740nm)$out
+print(outliers)
+
+# 3. Check how many negative outliers you have
+neg_outliers <- outliers[outliers < 0]
+length(neg_outliers)
+
 
 
 

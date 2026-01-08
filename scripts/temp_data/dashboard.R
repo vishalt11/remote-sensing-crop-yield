@@ -21,8 +21,6 @@ month_specs <- tibble::tribble(
 )
 
 compute_mean_nirv_month <- function(aoi_sf_4326, start_date, end_date, out_tif) {
-  
-  print('entered stac routine')
   # 1) ensure AOI is valid + in EPSG:4326
   aoi_sf_4326 <- sf::st_make_valid(aoi_sf_4326)
   aoi_sf_4326 <- sf::st_transform(aoi_sf_4326, 4326)
@@ -45,9 +43,6 @@ compute_mean_nirv_month <- function(aoi_sf_4326, start_date, end_date, out_tif) 
   } else {
     tif_path <- out_tif
   }
-  
-  print('nirv_end_date')
-  print(end_date)
   
   # 3) read raster + compute NIRV
   sentinel_raster <- terra::rast(tif_path) / 10000
@@ -107,17 +102,12 @@ ui <- fluidPage(
       selectInput(
         inputId = "crop_type",
         label   = "Crop type:",
-        choices = c("None", "Winter wheat"),
-        selected = "None"
+        choices = c("Winter wheat"),
+        selected = "Winter wheat"
       ),
-      
-      uiOutput("month_ui"),
-      
-      actionButton("build_sf", "Build sf object"),
       
       h4("Current sf object:"),
       verbatimTextOutput("sf_print"),
-      
       actionButton("run_pred", "Predict yield (t/ha)"),
       h4("Predicted yield (t/ha):"),
       verbatimTextOutput("pred_print"),
@@ -145,19 +135,6 @@ server <- function(input, output, session) {
   
   # Initial view: fit to Bavaria
   bav_bbox <- sf::st_bbox(bavaria_outline)
-  
-  output$month_ui <- renderUI({
-    req(input$crop_type)
-    if (input$crop_type == "None") return(NULL)
-    
-    checkboxGroupInput(
-      inputId = "months_selected",
-      label   = "Select months to use:",
-      choices = c("march", "april", "may", "june"),
-      selected = c("march", "april", "may", "june")  # optional default
-    )
-  })
-  
   
   output$map <- renderLeaflet({
     leaflet() %>%
@@ -262,7 +239,6 @@ server <- function(input, output, session) {
     dir.create("./nirv_data", showWarnings = FALSE, recursive = TRUE)
     
     nirv_values <- list()
-    
     
     for (i in seq_len(nrow(month_specs))) {
       m <- month_specs[i, ]

@@ -1,0 +1,33 @@
+.btn-primary {
+  background-color: #ffd60a;
+  border-color: #ffc300;
+}
+
+.panel-section {
+  padding: 14px;
+  margin-bottom: 14px;
+  border: 1px solid #353842;
+  border-radius: 10px;
+  background: #353842;
+}
+
+.panel-section-last {
+  padding: 14px;
+  /*margin-bottom: 14px;*/
+  border: 1px solid #353842;
+  border-radius: 10px;
+  background: #353842;
+}
+
+.well {
+  background: #474952;
+  margin-bottom: 20px;
+}
+
+#shiny-notification-panel {
+  position: fixed !important;
+  top: 50% !important;
+  left: 60% !important;   /* adjust depending on sidebar width */
+  transform: translate(-50%, -50%);
+  z-index: 1050;
+}

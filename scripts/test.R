@@ -2,7 +2,12 @@ library(tidyverse)
 library(mice)
 
 
-df <- arrow::read_parquet("../data/model_data_all.parquet")
+#df <- arrow::read_parquet("../data/model_data_all.parquet")
+#write.csv(df, '../data/model_data_all.csv', row.names = FALSE)
+
+df <- read.csv('../data/model_data_all.csv')
+
+arrow::write_parquet(df, '../data/model_data_all_v1.parquet')
 
 df <- df |>
   select(
@@ -20,6 +25,16 @@ df <- df |>
     #contains("NIRv", ignore.case = TRUE)
   )
 
+df <- df |> 
+  select(
+    NUTS_NAME, year, Winterweizen,
+    contains("Mar", ignore.case = TRUE),
+    #contains("Apr", ignore.case = TRUE),
+    #contains("May", ignore.case = TRUE),
+    #contains("Jun", ignore.case = TRUE)
+  )
+
+colnames(df)
 
 # train test split
 train_df <- df |> filter(year <= 2023)
@@ -42,21 +57,21 @@ test_df <- test_df %>%
 rownames(test_df) <- test_ids
 
 #----------mean imputation---------------------
-x_cols <- setdiff(names(train_df), "Winterweizen")
-
-# compute train means (na.rm=TRUE)
-train_means <- sapply(train_df[, x_cols, drop = FALSE], function(x) mean(x, na.rm = TRUE))
-
-mean_impute <- function(dat, means_vec) {
-  out <- dat
-  for (nm in names(means_vec)) {
-    idx <- is.na(out[[nm]])
-    if (any(idx)) out[[nm]][idx] <- means_vec[[nm]]
-  }
-  out
-}
-
-train_df_imp <- mean_impute(train_df, train_means)
+# x_cols <- setdiff(names(train_df), "Winterweizen")
+# 
+# # compute train means (na.rm=TRUE)
+# train_means <- sapply(train_df[, x_cols, drop = FALSE], function(x) mean(x, na.rm = TRUE))
+# 
+# mean_impute <- function(dat, means_vec) {
+#   out <- dat
+#   for (nm in names(means_vec)) {
+#     idx <- is.na(out[[nm]])
+#     if (any(idx)) out[[nm]][idx] <- means_vec[[nm]]
+#   }
+#   out
+# }
+# 
+# train_df_imp <- mean_impute(train_df, train_means)
 
 #----------mice imputation---------------------
 
