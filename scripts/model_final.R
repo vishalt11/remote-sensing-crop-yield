@@ -2,7 +2,9 @@ library(tidyverse)
 library(tidymodels)
 library(mice)
 
-
+#df <- arrow::read_parquet("../data/model_data_GOSIF.parquet")
+#df <- arrow::read_parquet("../data/model_data_NUTS3.parquet")
+# Model data nuts 2
 df <- arrow::read_parquet("../data/model_data_all.parquet")
 
 df <- df |>
@@ -63,7 +65,7 @@ train_df_imp <- complete(imp,1)
 
 
 # -----------------------------
-# 2) Recipe: imputation + scaling
+# Recipe: imputation + scaling
 # -----------------------------
 yield_recipe <- recipe(Winterweizen ~ ., data = train_df_imp) %>%
   step_normalize(all_numeric_predictors())
@@ -77,7 +79,7 @@ set.seed(42)
 
 
 # -----------------------------
-# 3) Plain linear regression
+# Plain linear regression
 # -----------------------------
 lm_model <- linear_reg() %>%
   set_engine("lm")
@@ -112,6 +114,18 @@ yardstick::metrics(
 ) %>%
 filter(.metric != 'rsq')
 
+
+
+
+dim(train_df_imp)
+colnames(train_df_imp)
+
+rmse <- yardstick::metrics(
+  test_predictions,
+  truth = Winterweizen,
+  estimate = .pred) %>%
+  filter(.metric == 'rmse')
+
 #-----------------------xgboost-------------------------------------------------
 library(xgboost)
 
@@ -119,13 +133,13 @@ head(df,1)
 
 
 # -----------------------------
-# 1) Split by year (train: 2017-2023, test: 2024)
+# Split by year (train: 2017-2023, test: 2024)
 # -----------------------------
 train_df <- df %>% filter(year < 2024)
 test_df  <- df %>% filter(year == 2024)
 
 # -----------------------------
-# 2) Build X / y (drop NUTS_NAME and year from features)
+# Build X / y (drop NUTS_NAME and year from features)
 # -----------------------------
 y_train <- train_df$Winterweizen
 y_test  <- test_df$Winterweizen
@@ -137,7 +151,7 @@ X_test <- test_df %>%
   select(-Winterweizen, -NUTS_NAME, -year)
 
 # -----------------------------
-# 3) Simple imputation (NO mice): median per column (fit on train, apply to both)
+# Simple imputation (NO mice): median per column (fit on train, apply to both)
 # -----------------------------
 medians <- sapply(X_train, function(x) median(x, na.rm = TRUE))
 
@@ -161,9 +175,9 @@ dtrain <- xgb.DMatrix(data = train_mat, label = y_train)
 dtest  <- xgb.DMatrix(data = test_mat,  label = y_test)
 
 # -----------------------------
-# 4) 5-fold cross-validation to choose nrounds
+# 5-fold cross-validation to choose nrounds
 # -----------------------------
-set.seed(42)
+set.seed(69)
 
 params <- list(
   booster = "gbtree",
@@ -183,10 +197,10 @@ params <- list(
   objective = "reg:squarederror",
   eval_metric = "rmse",
   eta = 0.02,
-  max_depth = 2,          # CRITICAL
-  min_child_weight = 5,   # CRITICAL
+  max_depth = 2,          
+  min_child_weight = 5,   
   subsample = 0.7,
-  colsample_bytree = 0.6,
+  colsample_bytree = 0.5,
   lambda = 5,
   alpha = 1
 )
@@ -208,7 +222,7 @@ best_nrounds
 
 
 # -----------------------------
-# 5) Train final model on all training years
+#Train final model on all training years
 # -----------------------------
 final_model <- xgb.train(
   params = params,
@@ -218,7 +232,7 @@ final_model <- xgb.train(
 )
 
 # -----------------------------
-# 6) Predict on 2024 test + metrics
+#Predict on 2024 test + metrics
 # -----------------------------
 pred_test <- predict(final_model, dtest)
 
@@ -228,7 +242,7 @@ r2   <- 1 - sum((pred_test - y_test)^2) / sum((y_test - mean(y_test))^2)
 
 c(RMSE = rmse, MAE = mae, R2 = r2)
 
-# Optional: feature importance
+# feature importance
 imp <- xgb.importance(model = final_model)
 print(head(imp, 15))
 xgb.plot.importance(imp, top_n = 20)

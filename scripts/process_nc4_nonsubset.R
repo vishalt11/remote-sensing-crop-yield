@@ -72,7 +72,7 @@ for (i in seq_along(nc_list)) {
   short_name <- names(nc_list)[i]
   cat("Processing:", short_name, "\n")
   
-  # --- STEP 1: read lat/lon only
+  # read lat/lon only
   lat <- ncvar_get(nc, "Latitude")
   lon <- ncvar_get(nc, "Longitude")
   
@@ -81,7 +81,7 @@ for (i in seq_along(nc_list)) {
     next
   }
   
-  # --- STEP 2: create mask for soundings inside Germany
+  # create mask for soundings inside Germany
   mask <- lat >= lat_min & lat <= lat_max & 
     lon >= lon_min & lon <= lon_max
   
@@ -115,7 +115,7 @@ for (i in seq_along(nc_list)) {
           vars$Lat_corner3 <- vals[3]
           vars$Lat_corner4 <- vals[4]
         } else if (length(dim(vals)) == 2) {
-          # Multi-sounding (4 × N)
+          # Multi-sounding (4 ? N)
           vars$Lat_corner1 <- as.vector(vals[1, ])
           vars$Lat_corner2 <- as.vector(vals[2, ])
           vars$Lat_corner3 <- as.vector(vals[3, ])

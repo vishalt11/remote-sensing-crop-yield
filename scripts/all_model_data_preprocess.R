@@ -1,8 +1,7 @@
 library(tidyverse)
 library(sf)
-library(mice)
 
-result_all <- readRDS(file = '../data/model_data.rds')
+result_all <- readRDS(file = '../data/oco2_sif.rds')
 
 idx <- sapply(result_all$crop_stats, function(df) {
   if (is.null(df) || nrow(df) == 0) return(FALSE)

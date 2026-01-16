@@ -32,6 +32,8 @@ global(r, fun = "max", na.rm = TRUE)
 r[r >= 32766] <- NA
 r_real <- r * 0.0001
 
+terra::plot(r_real)
+
 ger_extent <- ext(5.8, 15.1, 47.2, 55.1)
 
 munich_extent <- ext(11.5, 11.7, 47.9, 48.4)
